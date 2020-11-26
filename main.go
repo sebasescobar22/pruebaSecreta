@@ -54,8 +54,8 @@ func main() {
 
 	//Start Servidor
 	port := os.Getenv("PORT")
-	fmt.Printf(port)
-	http.ListenAndServe(":80", nil)
+
+	http.ListenAndServe(":"+port, nil)
 
 }
 
