@@ -67,7 +67,7 @@ func main() {
 
 	//Modo de trabajo
 	modo := []string{"on", "off"}
-	local := modo[0]
+	local := modo[1]
 
 	//Routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
