@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
+
 	"os"
 	"strconv"
 )
@@ -38,22 +40,22 @@ type InfoSec struct {
 
 //EstructurasPara formatear JSON {
 type Satellite struct {
-	name     string
-	distance float64
-	message  []string
+	Name     string
+	Distance float64
+	Message  []string
 }
 type PuntoPosicion struct {
-	x float64
-	y float64
+	X float64
+	Y float64
 }
 
 type JsonPost struct {
-	satellites [3]Satellite
+	Satellites [3]Satellite
 }
 
 type JsonAnswer struct {
-	position PuntoPosicion
-	message  string
+	Position PuntoPosicion
+	Message  string
 }
 
 //}
@@ -61,7 +63,11 @@ type JsonAnswer struct {
 func main() {
 
 	//Working Status
-	fmt.Printf("Server is Up")
+	fmt.Println("Server is Up")
+
+	//Modo de trabajo
+	modo := []string{"on", "off"}
+	local := modo[1]
 
 	//Routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -95,44 +101,26 @@ func main() {
 	http.HandleFunc("/top-secret/", func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method == "GET" {
-			t, err := template.ParseFiles("form.html")
-			check(err)
+			t, _ := template.ParseFiles("form.html")
+
 			t.Execute(w, nil)
 		}
 
 		if r.Method == "POST" {
 			r.ParseForm()
 
-			var auxErr error
 			// Extraigo la informacion del formulario en una estructura
 			newInfo := Info{}
-			newInfo.sat1_distancia, auxErr = strconv.ParseFloat(r.Form.Get("sat1_distancia"), 32)
+			newInfo.sat1_distancia, _ = strconv.ParseFloat(r.Form.Get("sat1_distancia"), 32)
 			newInfo.sat1_mensaje = r.Form.Get("sat1_mensaje")
-			newInfo.sat2_distancia, auxErr = strconv.ParseFloat(r.Form.Get("sat2_distancia"), 32)
+			newInfo.sat2_distancia, _ = strconv.ParseFloat(r.Form.Get("sat2_distancia"), 32)
 			newInfo.sat2_mensaje = r.Form.Get("sat2_mensaje")
-			newInfo.sat3_distancia, auxErr = strconv.ParseFloat(r.Form.Get("sat3_distancia"), 32)
+			newInfo.sat3_distancia, _ = strconv.ParseFloat(r.Form.Get("sat3_distancia"), 32)
 			newInfo.sat3_mensaje = r.Form.Get("sat3_mensaje")
-			check(auxErr)
 
 			arrayStringMsg1 := separarString(newInfo.sat1_mensaje)
 			arrayStringMsg2 := separarString(newInfo.sat2_mensaje)
 			arrayStringMsg3 := separarString(newInfo.sat3_mensaje)
-
-			//Prueba con formato JSON
-			sat1 := Satellite{"Kenobi", newInfo.sat1_distancia, arrayStringMsg1}
-			sat2 := Satellite{"Skywalker", newInfo.sat2_distancia, arrayStringMsg2}
-			sat3 := Satellite{"Sato", newInfo.sat3_distancia, arrayStringMsg3}
-
-			auxSat := [3]Satellite{sat1, sat2, sat3}
-			satelites := JsonPost{auxSat}
-
-			jsonSatelites, auxErr := json.Marshal(satelites)
-
-			_, err := http.Post("/top-secretsjson/", "application/json", bytes.NewBuffer(jsonSatelites))
-
-			// Fin Prueba Json (No se llego a terminar)
-
-			//Continuacion de la Solucion
 
 			secretX, secretY := GetLocation(float32(newInfo.sat1_distancia), float32(newInfo.sat2_distancia), float32(newInfo.sat3_distancia))
 
@@ -144,35 +132,90 @@ func main() {
 			newDesencriptado.MsgDsncrptd = GetMessage(arrayStringMsg1, arrayStringMsg2, arrayStringMsg3)
 
 			//Muestra resultados
-			y, err := template.ParseFiles("datos.html")
-			check(err)
+			y, _ := template.ParseFiles("datos.html")
+			//check(err)
 
 			y.Execute(w, newDesencriptado)
+
+			//Aplicando Formato JSON y Req Post
+			sat1 := Satellite{"Kenobi", newInfo.sat1_distancia, arrayStringMsg1}
+			sat2 := Satellite{"Skywalker", newInfo.sat2_distancia, arrayStringMsg2}
+			sat3 := Satellite{"Sato", newInfo.sat3_distancia, arrayStringMsg3}
+
+			auxSat := [3]Satellite{sat1, sat2, sat3}
+			satelites := JsonPost{auxSat}
+
+			jsonSatelites, _ := json.Marshal(satelites)
+			w.Write(jsonSatelites)
+			client := &http.Client{}
+
+			var url string
+			if local == modo[0] {
+				url = "http://localhost:3000/top-secretjson/"
+			} else {
+				url = "https://immense-bastion-33822.herokuapp.com/top-secretjson/"
+
+			}
+			req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonSatelites))
+
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				check(err)
+				fmt.Println("Unable to reach the server.")
+			} else {
+				body, _ := ioutil.ReadAll(resp.Body)
+				fmt.Println(string(body))
+			}
+
+			// Fin Formato Json y POST Json
 		}
 
 	})
 
 	http.HandleFunc("/top-secretjson/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			decoder := json.NewDecoder(r.Body)
-			var t JsonPost
-			err := decoder.Decode(&t)
-			if err != nil {
-				panic(err)
-			}
-			log.Println(t.satellites)
-			fmt.Printf("Json satellites working")
 
+		decoder := json.NewDecoder(r.Body)
+		var t JsonPost
+		err := decoder.Decode(&t)
+		if err != nil {
+			panic(err)
 		}
+
+		secretX, secretY := GetLocation(float32(t.Satellites[0].Distance), float32(t.Satellites[1].Distance), float32(t.Satellites[2].Distance))
+
+		newDesencriptado := InfoSec{}
+		newDesencriptado.PosX = secretX
+		newDesencriptado.PosY = secretY
+		newDesencriptado.Position[0], newDesencriptado.Position[1] = secretX, secretY
+
+		newDesencriptado.MsgDsncrptd = GetMessage(t.Satellites[0].Message, t.Satellites[1].Message, t.Satellites[2].Message)
+
+		newAnswer := JsonAnswer{}
+		newAnswer.Position.X = float64(secretX)
+		newAnswer.Position.Y = float64(secretY)
+		newAnswer.Message = newDesencriptado.MsgDsncrptd
+
+		fmt.Fprintf(w, "Response Code 200 \n")
+
+		jsonData, auxErr := json.Marshal(newAnswer)
+		check(auxErr)
+
+		w.Write(jsonData)
+
 	})
 
-	//Servidor Heroku
-	port := os.Getenv("PORT")
+	if local == modo[0] {
+		//Prueba local
+		http.ListenAndServe(":3000", nil)
 
-	http.ListenAndServe(":"+port, nil)
+	} else {
+		//Servidor Heroku
+		port := os.Getenv("PORT")
 
-	//Prueba local
-	//http.ListenAndServe(":3000", nil)
+		http.ListenAndServe(":"+port, nil)
+	}
 
 }
 
@@ -212,11 +255,11 @@ func GetLocation(distance ...float32) (x, y float32) {
 		y := ((math.Pow(ar, 2) - math.Pow(br, 2) + math.Pow(float64(i), 2) + math.Pow(float64(j), 2)) / (2 * float64(j))) - ((float64(i) / float64(j)) * x)
 
 		//Liberia Math opera en f64 -> Conversion a f32 para formato de retorno
-		println(x, y)
+		//println(x, y)
 
 		xF32 := float32(x)
 		yF32 := float32(y)
-		println(xF32, yF32)
+		//println(xF32, yF32)
 
 		return xF32, yF32
 	} else {
@@ -236,7 +279,7 @@ func GetMessage(messages ...[]string) (msg string) {
 	for indexM, message := range messages {
 		diferenciaPos := 0
 		encontrados := 0
-		println("\n Cadena: ", indexM)
+		//println("\n Cadena: ", indexM)
 		if indexM != 0 {
 			for pos, valorMsg := range message {
 
@@ -252,8 +295,8 @@ func GetMessage(messages ...[]string) (msg string) {
 								diferenciaPos = posEscontrada - pos
 							}
 
-							println("\n Encontrados iguales: ", encontrados)
-							println("\n Diferencia Posiciones: ", diferenciaPos)
+							//println("\n Encontrados iguales: ", encontrados)
+							//println("\n Diferencia Posiciones: ", diferenciaPos)
 
 						}
 					}
@@ -268,7 +311,7 @@ func GetMessage(messages ...[]string) (msg string) {
 			found := false
 			posiblePos := pos
 
-			if valorMsg != "" {
+			if valorMsg != "" && valorMsg != "." {
 
 				for _, valorYaAnexado := range cadenaMsg {
 					if valorYaAnexado == valorMsg {
@@ -316,7 +359,7 @@ func GetMessage(messages ...[]string) (msg string) {
 	for _, decod := range cadenaMsg {
 		msj = msj + " " + decod
 	}
-	println(msj)
+	//println(msj)
 	return msj
 }
 
@@ -340,13 +383,6 @@ func split(tosplit string, sep rune) []string {
 			fields = append(fields, string(tosplit[last:i]))
 			last = i + 1
 
-			if auxSep == 2 {
-				// Found 2 times the separator (' '), append a slice
-				fields = append(fields, string(tosplit[last:i]))
-				last = i + 1
-
-				auxSep = 0
-			}
 		}
 	}
 
@@ -362,6 +398,6 @@ func separarString(str string) []string {
 		secuencia = append(secuencia, field)
 
 	}
-	println(secuencia)
+	//println(secuencia)
 	return secuencia
 }
