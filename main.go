@@ -67,12 +67,13 @@ func main() {
 
 	//Modo de trabajo
 	modo := []string{"on", "off"}
-	local := modo[1]
+	local := modo[0]
 
 	//Routes
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello World")
 		io.WriteString(w, "\n This site is working")
+		io.WriteString(w, "\n Add /top-secret/ to the url and start testing the app")
 	})
 
 	http.HandleFunc("/localizar", func(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +168,8 @@ func main() {
 			} else {
 				body, _ := ioutil.ReadAll(resp.Body)
 				fmt.Println(string(body))
+
+				w.Write(body)
 			}
 
 			// Fin Formato Json y POST Json
